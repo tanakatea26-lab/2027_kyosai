@@ -1,1 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOGO Chat - 多々良沼保全課</title>
+    <style>
+        :root {
+            --header-bg: #00ced1;
+            --bg-gray: #f0f2f5;
+            --bubble-white: #ffffff;
+            --bubble-main: #afeeee; 
+        }
 
+        body {
+            margin: 0;
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: var(--bg-gray);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+        #chat-window {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            max-width: 80%;
+            opacity: 0;
+            transform: translateY(10px);
+            animation: fadeIn 0.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.sato { align-self: flex-end; align-items: flex-end; }
+        .message.suzuki { align-self: flex-start; align-items: flex-start; }
+
+        .user-name { font-size: 12px; color: #65676b; margin-bottom: 5px; }
+
+        .bubble {
+            padding: 10px 15px;
+            border-radius: 18px;
+            font-size: 15px;
+            line-height: 1.4;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .sato .bubble {
+            background-color: var(--bubble-main);
+            color: #000;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .suzuki .bubble {
+            background-color: var(--bubble-white);
+            color: black;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .photo-thumbnail {
+            margin-top: 10px;
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+        }
+
+        /* 演出用スクリーン（黒・白共通） */
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2000;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: background-color 1s ease, opacity 1s ease;
+        }
+
+        .display-text {
+            font-size: 18px;
+            margin: 10px 0;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.8;
+            animation: textFadeIn 0.8s forwards;
+        }
+
+        @keyframes textFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* 朝ごはん画像 */
+        #morning-img {
+            margin-top: 20px;
+            max-width: 80%;
+            max-height: 40%;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        /* モーダル */
+        #modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            z-index: 3000;
+            justify-content: center; align-items: center;
+        }
+        #modal-img { max-width: 90%; max-height: 90%; object-fit: contain; }
+        #close-btn { position: absolute; top: 20px; right: 20px; color: white; font-size: 40px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<header>LOGO Chat - 多々良沼保全課</header>
+
+<div id="chat-window"></div>
+
+<div id="modal" onclick="closeModal()">
+    <span id="close-btn">&times;</span>
+    <img id="modal-img" src="" alt="拡大写真">
+</div>
+
+<div id="overlay"></div>
+
+<script>
+    const chatWindow = document.getElementById('chat-window');
+    const overlay = document.getElementById('overlay');
+    
+    // 1. チャットデータ
+    const chatData = [
+        { type: "sato", name: "佐藤", text: "今日の巡回写真です。特に異常はありませんでした", img: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=800&q=80" },
+        { type: "suzuki", name: "鈴木", text: "あー始まったか" },
+        { type: "sato", name: "佐藤", text: "何がですか？" },
+        { type: "suzuki", name: "鈴木", text: "あれだよ、危険存在対策" },
+        { type: "sato", name: "佐藤", text: "あの50年に一度のあれですか？周期的にはあと20年は大丈夫のはずなのに、、、" },
+        { type: "suzuki", name: "鈴木", text: "よく写真を見てみて、薄っすら手が映ってるだろ" },
+        { type: "sato", name: "佐藤", text: "確かに映ってる、、" }
+    ];
+
+    // 2. 悪夢パート（黒背景・赤文字）
+    const horrorLines = [
+        "暗く、粘ついた空間に俺は立っていた。",
+        "足元は地面なのか、それとも底なしの泥なのか分からない。",
+        "ただ一歩動くたび、ぬちり、と嫌な音が腹の奥まで響く。",
+        "光はない。",
+        "あるのは、闇が呼吸しているかのような圧迫感だけだった。",
+        "――ざり……ざり……",
+        "どこからか、擦れる音がする。",
+        "闇の奥が、わずかに蠢いた。",
+        "次の瞬間、白いものが浮かび上がった。",
+        "手だ。",
+        "骨ばった、異様に白い手。",
+        "一本ではない。二本でもない。",
+        "闇の壁そのものが裂けるように、無数の手が生え、伸びてくる。",
+        "指が、ゆっくりと、しかし確実にこちらへ向かってくる。",
+        "爪は黒く濁り、皮膚は水死体のようにふやけていた。",
+        "逃げようとした。",
+        "だが、足が動かない。",
+        "最初の一本が、俺の手首に触れた。",
+        "冷たい。",
+        "氷のようなのに、内部から脈打つ感触がある。",
+        "「――――」",
+        "声にならない声が、直接頭の中に流れ込んできた。",
+        "意味は分からない。",
+        "ただ、“引きずり込む”という意志だけが、はっきりと伝わる。",
+        "次の手が、指を絡めてきた。",
+        "さらに別の手が、爪を食い込ませる。",
+        "皮膚の内側を、何かが這い回る感覚。",
+        "気づけば、俺の腕は白い手の塊に包まれていた。",
+        "闇が、近づいてくる。"
+    ];
+
+    // 3. 現実パート（更新済み）
+    const morningLines = [
+        "目覚まし時計の音が聞こえる",
+        "起きなくては",
+        "今日からはアレの対策が始まる",
+        "今回も問題なく完了できるだろうか？"
+    ];
+
+    let index = 0;
+    const messageDelay = 3500;
+
+    function addMessage() {
+        if (index >= chatData.length) {
+            setTimeout(startHorrorPhase, messageDelay);
+            return;
+        }
+        const data = chatData[index];
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${data.type}`;
+        let content = `<span class="user-name">${data.name}</span><div class="bubble">${data.text}</div>`;
+        if (data.img) content += `<img src="${data.img}" class="photo-thumbnail" onclick="openModal('${data.img}')">`;
+        messageDiv.innerHTML = content;
+        chatWindow.appendChild(messageDiv);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+        index++;
+        setTimeout(addMessage, messageDelay);
+    }
+
+    function startHorrorPhase() {
+        overlay.style.display = 'flex';
+        overlay.style.backgroundColor = 'black';
+        setTimeout(() => { overlay.style.opacity = '1'; }, 100);
+        setTimeout(() => showText(horrorLines, "#b30000", true, 0), 2000);
+    }
+
+    function startMorningPhase() {
+        overlay.innerHTML = "";
+        overlay.style.backgroundColor = 'white';
+        setTimeout(() => showText(morningLines, "black", false, 0), 1000);
+    }
+
+    function showText(lines, color, isHorror, lineIdx) {
+        if (lineIdx >= lines.length) {
+            if (isHorror) {
+                setTimeout(startMorningPhase, 2000);
+            } else {
+                const img = document.createElement('img');
+                img.id = "morning-img";
+                img.src = "https://images.unsplash.com/photo-1494390248081-4e521a5940db?auto=format&fit=crop&w=800&q=80";
+                img.style.display = "block";
+                overlay.appendChild(img);
+            }
+            return;
+        }
+
+        overlay.innerHTML = "";
+        const p = document.createElement('p');
+        p.className = 'display-text';
+        p.style.color = color;
+        if (isHorror) p.style.textShadow = "0 0 8px rgba(179,0,0,0.6)";
+        p.textContent = lines[lineIdx];
+        overlay.appendChild(p);
+
+        setTimeout(() => showText(lines, color, isHorror, lineIdx + 1), 3000);
+    }
+
+    setTimeout(addMessage, 1000);
+
+    function openModal(src) {
+        document.getElementById('modal').style.display = 'flex';
+        document.getElementById('modal-img').src = src;
+    }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    document.addEventListener('keydown', (e) => { if (e.key === "Escape") closeModal(); });
+</script>
+
+</body>
+</html>
